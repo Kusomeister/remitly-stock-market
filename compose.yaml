@@ -20,7 +20,10 @@ services:
       context: .
     environment:
       PORT: "8080"
+      METRICS_PORT: "9091"
       DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-remitly}?sslmode=disable"
+    expose:
+      - "9091"
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,14 +39,100 @@ services:
     command:
       - "--providers.file.filename=/etc/traefik/dynamic.yaml"
       - "--entrypoints.web.address=:80"
+      - "--entrypoints.metrics.address=:8082"
+      - "--metrics.prometheus=true"
+      - "--metrics.prometheus.entryPoint=metrics"
       - "--log.level=INFO"
     ports:
       - "${PORT:-8080}:80"
+    expose:
+      - "8082"
     volumes:
       - "./traefik-dynamic.yaml:/etc/traefik/dynamic.yaml:ro"
     depends_on:
       - app
     restart: unless-stopped
 
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    profiles:
+      - observability
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-remitly}?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    profiles:
+      - observability
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - "./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      - prometheus-data:/prometheus
+    depends_on:
+      - app
+      - traefik
+      - postgres-exporter
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.6.0
+    user: "0"
+    profiles:
+      - observability
+    command:
+      - "-config.file=/etc/loki/loki.yml"
+    volumes:
+      - "./observability/loki/loki.yml:/etc/loki/loki.yml:ro"
+      - loki-data:/loki
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.16.0
+    profiles:
+      - observability
+    command:
+      - "run"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy/data"
+      - "/etc/alloy/config.alloy"
+    volumes:
+      - "./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - alloy-data:/var/lib/alloy/data
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    profiles:
+      - observability
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_METRICS_ENABLED: "true"
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - "./observability/grafana/provisioning:/etc/grafana/provisioning:ro"
+      - "./observability/grafana/dashboards:/etc/grafana/dashboards:ro"
+    depends_on:
+      - prometheus
+      - loki
+    restart: unless-stopped
+
 volumes:
   postgres-data:
+  prometheus-data:
+  loki-data:
+  alloy-data:
+  grafana-data:

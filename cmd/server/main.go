@@ -14,15 +14,8 @@ import (
 )
 
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	addr := ":" + port
-	if strings.HasPrefix(port, ":") {
-		addr = port
-	}
+	addr := listenAddress(envOrDefault("PORT", "8080"))
+	metricsAddr := listenAddress(envOrDefault("METRICS_PORT", "9091"))
 
 	store := market.Market(market.NewMemoryMarket())
 	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
@@ -39,9 +32,25 @@ func main() {
 		store = postgres.NewStore(pool)
 	}
 
+	observability := httpapi.NewObservability()
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", observability.MetricsHandler())
+	metricsServer := &http.Server{
+		Addr:              metricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	go func() {
+		log.Printf("metrics listening on %s", metricsAddr)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           httpapi.NewHandlerWithChaos(store, func() { os.Exit(1) }),
+		Handler:           httpapi.NewObservedHandlerWithChaos(store, func() { os.Exit(1) }, observability),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -49,4 +58,21 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+func envOrDefault(name, defaultValue string) string {
+	value := os.Getenv(name)
+	if value == "" {
+		return defaultValue
+	}
+
+	return value
+}
+
+func listenAddress(port string) string {
+	if strings.HasPrefix(port, ":") {
+		return port
+	}
+
+	return ":" + port
 }

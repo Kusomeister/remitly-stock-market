@@ -4,7 +4,10 @@ set -eu
 PORT="${1:-8080}"
 export PORT
 
+GRAFANA_PORT="${GRAFANA_PORT:-3000}"
+export GRAFANA_PORT
+
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 cd "$SCRIPT_DIR"
 
-docker compose up --build --scale app=2
+docker compose --profile observability up --build --scale app=2
