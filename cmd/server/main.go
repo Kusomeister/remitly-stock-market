@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"remitly-stock-market/internal/httpapi"
 	"remitly-stock-market/internal/market"
+	"remitly-stock-market/internal/postgres"
 )
 
 func main() {
@@ -22,7 +24,21 @@ func main() {
 		addr = port
 	}
 
-	store := market.NewMemoryMarket()
+	store := market.Market(market.NewMemoryMarket())
+	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
+		pool, err := postgres.Connect(context.Background(), databaseURL)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer pool.Close()
+
+		if err := postgres.Migrate(context.Background(), pool); err != nil {
+			log.Fatal(err)
+		}
+
+		store = postgres.NewStore(pool)
+	}
+
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           httpapi.NewHandler(store),
