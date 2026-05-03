@@ -13,11 +13,7 @@ type Server struct {
 	store market.Market
 }
 
-func NewHandler() http.Handler {
-	return NewHandlerWithMarket(market.NewMemoryMarket())
-}
-
-func NewHandlerWithMarket(store market.Market) http.Handler {
+func NewHandler(store market.Market) http.Handler {
 	server := &Server{store: store}
 
 	mux := http.NewServeMux()

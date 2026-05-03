@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"remitly-stock-market/internal/httpapi"
+	"remitly-stock-market/internal/market"
 )
 
 func main() {
@@ -21,9 +22,10 @@ func main() {
 		addr = port
 	}
 
+	store := market.NewMemoryMarket()
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           httpapi.NewHandler(),
+		Handler:           httpapi.NewHandler(store),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

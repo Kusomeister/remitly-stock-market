@@ -15,7 +15,7 @@ func TestHealth(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler().ServeHTTP(rec, req)
+	newTestHandler().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
@@ -34,7 +34,7 @@ func TestHealth(t *testing.T) {
 }
 
 func TestGetStocksInitiallyEmpty(t *testing.T) {
-	rec := doRequest(NewHandler(), http.MethodGet, "/stocks", "")
+	rec := doRequest(newTestHandler(), http.MethodGet, "/stocks", "")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
@@ -44,7 +44,7 @@ func TestGetStocksInitiallyEmpty(t *testing.T) {
 }
 
 func TestPostStocksSetsState(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postBody := `{"stocks":[{"name":"stock1","quantity":99},{"name":"stock2","quantity":1}]}`
 
 	rec := doRequest(handler, http.MethodPost, "/stocks", postBody)
@@ -64,7 +64,7 @@ func TestPostStocksSetsState(t *testing.T) {
 }
 
 func TestPostStocksEmptyListClearsBank(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 
 	rec := doRequest(handler, http.MethodPost, "/stocks", `{"stocks":[{"name":"stock1","quantity":99}]}`)
 	if rec.Code != http.StatusOK {
@@ -99,7 +99,7 @@ func TestPostStocksValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := doRequest(NewHandler(), http.MethodPost, "/stocks", tt.body)
+			rec := doRequest(newTestHandler(), http.MethodPost, "/stocks", tt.body)
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
 			}
@@ -108,7 +108,7 @@ func TestPostStocksValidation(t *testing.T) {
 }
 
 func TestBuySuccessUpdatesBankWalletAndLog(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postStocks(t, handler, `{"stocks":[{"name":"stock1","quantity":2}]}`)
 
 	rec := doRequest(handler, http.MethodPost, "/wallets/w1/stocks/stock1", `{"type":"buy"}`)
@@ -141,7 +141,7 @@ func TestBuySuccessUpdatesBankWalletAndLog(t *testing.T) {
 }
 
 func TestSellSuccessUpdatesBankWalletAndLog(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postStocks(t, handler, `{"stocks":[{"name":"stock1","quantity":1}]}`)
 	trade(t, handler, "/wallets/w1/stocks/stock1", `{"type":"buy"}`, http.StatusOK)
 
@@ -173,7 +173,7 @@ func TestSellSuccessUpdatesBankWalletAndLog(t *testing.T) {
 }
 
 func TestAuditLogPreservesBuySellOrder(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postStocks(t, handler, `{"stocks":[{"name":"stock1","quantity":2}]}`)
 	trade(t, handler, "/wallets/w1/stocks/stock1", `{"type":"buy"}`, http.StatusOK)
 	trade(t, handler, "/wallets/w1/stocks/stock1", `{"type":"sell"}`, http.StatusOK)
@@ -192,49 +192,49 @@ func TestAuditLogPreservesBuySellOrder(t *testing.T) {
 }
 
 func TestBuyUnknownStockReturnsNotFound(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postStocks(t, handler, `{"stocks":[]}`)
 
 	trade(t, handler, "/wallets/w1/stocks/missing", `{"type":"buy"}`, http.StatusNotFound)
 }
 
 func TestBuyStockWithZeroQuantityReturnsBadRequest(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postStocks(t, handler, `{"stocks":[{"name":"stock1","quantity":0}]}`)
 
 	trade(t, handler, "/wallets/w1/stocks/stock1", `{"type":"buy"}`, http.StatusBadRequest)
 }
 
 func TestSellUnknownStockReturnsNotFound(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postStocks(t, handler, `{"stocks":[]}`)
 
 	trade(t, handler, "/wallets/w1/stocks/missing", `{"type":"sell"}`, http.StatusNotFound)
 }
 
 func TestSellStockMissingFromWalletReturnsBadRequest(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postStocks(t, handler, `{"stocks":[{"name":"stock1","quantity":1}]}`)
 
 	trade(t, handler, "/wallets/w1/stocks/stock1", `{"type":"sell"}`, http.StatusBadRequest)
 }
 
 func TestInvalidOperationTypeReturnsBadRequest(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postStocks(t, handler, `{"stocks":[{"name":"stock1","quantity":1}]}`)
 
 	trade(t, handler, "/wallets/w1/stocks/stock1", `{"type":"hold"}`, http.StatusBadRequest)
 }
 
 func TestInvalidTradeJSONReturnsBadRequest(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postStocks(t, handler, `{"stocks":[{"name":"stock1","quantity":1}]}`)
 
 	trade(t, handler, "/wallets/w1/stocks/stock1", `{"type":`, http.StatusBadRequest)
 }
 
 func TestFailedOperationDoesNotAddAuditLogEntry(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postStocks(t, handler, `{"stocks":[{"name":"stock1","quantity":0}]}`)
 	trade(t, handler, "/wallets/w1/stocks/stock1", `{"type":"buy"}`, http.StatusBadRequest)
 
@@ -246,7 +246,7 @@ func TestFailedOperationDoesNotAddAuditLogEntry(t *testing.T) {
 }
 
 func TestPostStocksDoesNotClearWalletsOrAuditLog(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postStocks(t, handler, `{"stocks":[{"name":"stock1","quantity":1}]}`)
 	trade(t, handler, "/wallets/w1/stocks/stock1", `{"type":"buy"}`, http.StatusOK)
 	postStocks(t, handler, `{"stocks":[]}`)
@@ -270,7 +270,7 @@ func TestPostStocksDoesNotClearWalletsOrAuditLog(t *testing.T) {
 }
 
 func TestGetMissingWalletReturnsEmptyWallet(t *testing.T) {
-	rec := doRequest(NewHandler(), http.MethodGet, "/wallets/w1", "")
+	rec := doRequest(newTestHandler(), http.MethodGet, "/wallets/w1", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
@@ -279,7 +279,7 @@ func TestGetMissingWalletReturnsEmptyWallet(t *testing.T) {
 }
 
 func TestGetMissingWalletStockReturnsZero(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 
 	rec := doRequest(handler, http.MethodGet, "/wallets/w1/stocks/stock1", "")
 	if rec.Code != http.StatusOK {
@@ -290,7 +290,7 @@ func TestGetMissingWalletStockReturnsZero(t *testing.T) {
 }
 
 func TestGetMissingStockInExistingWalletReturnsZero(t *testing.T) {
-	handler := NewHandler()
+	handler := newTestHandler()
 	postStocks(t, handler, `{"stocks":[{"name":"stock1","quantity":1},{"name":"stock2","quantity":1}]}`)
 	trade(t, handler, "/wallets/w1/stocks/stock1", `{"type":"buy"}`, http.StatusOK)
 
@@ -311,12 +311,16 @@ func TestInvalidWalletPathsReturnNotFound(t *testing.T) {
 
 	for _, target := range tests {
 		t.Run(target, func(t *testing.T) {
-			rec := doRequest(NewHandler(), http.MethodGet, target, "")
+			rec := doRequest(newTestHandler(), http.MethodGet, target, "")
 			if rec.Code != http.StatusNotFound {
 				t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
 			}
 		})
 	}
+}
+
+func newTestHandler() http.Handler {
+	return NewHandler(market.NewMemoryMarket())
 }
 
 func doRequest(handler http.Handler, method, target, body string) *httptest.ResponseRecorder {
