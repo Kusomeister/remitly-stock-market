@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 
 	"remitly-stock-market/internal/market"
 )
@@ -24,7 +23,8 @@ func NewHandlerWithMarket(store market.Market) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", server.handleHealth)
 	mux.HandleFunc("/stocks", server.handleStocks)
-	mux.HandleFunc("/wallets/", server.handleWallets)
+	mux.HandleFunc("/wallets/{wallet_id}", server.handleWallet)
+	mux.HandleFunc("/wallets/{wallet_id}/stocks/{stock_name}", server.handleWalletStock)
 	mux.HandleFunc("/log", server.handleLog)
 	return mux
 }
@@ -93,23 +93,18 @@ func (s *Server) handlePostStocks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{})
 }
 
-func (s *Server) handleWallets(w http.ResponseWriter, r *http.Request) {
-	walletID, stockName, ok := parseWalletPath(r.URL.Path)
-	if !ok {
+func (s *Server) handleWallet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
 		http.NotFound(w, r)
 		return
 	}
 
-	if stockName == "" {
-		if r.Method != http.MethodGet {
-			http.NotFound(w, r)
-			return
-		}
+	s.handleGetWallet(w, r, r.PathValue("wallet_id"))
+}
 
-		s.handleGetWallet(w, r, walletID)
-		return
-	}
-
+func (s *Server) handleWalletStock(w http.ResponseWriter, r *http.Request) {
+	walletID := r.PathValue("wallet_id")
+	stockName := r.PathValue("stock_name")
 	switch r.Method {
 	case http.MethodGet:
 		s.handleGetWalletStock(w, r, walletID, stockName)
@@ -188,23 +183,6 @@ func (s *Server) handleLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, logResponse{Log: logEntries})
-}
-
-func parseWalletPath(path string) (walletID, stockName string, ok bool) {
-	trimmed := strings.TrimPrefix(path, "/wallets/")
-	if trimmed == path || trimmed == "" {
-		return "", "", false
-	}
-
-	parts := strings.Split(trimmed, "/")
-	if len(parts) == 1 && parts[0] != "" {
-		return parts[0], "", true
-	}
-	if len(parts) == 3 && parts[0] != "" && parts[1] == "stocks" && parts[2] != "" {
-		return parts[0], parts[2], true
-	}
-
-	return "", "", false
 }
 
 type stocksRequest struct {

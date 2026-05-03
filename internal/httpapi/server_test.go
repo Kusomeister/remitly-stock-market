@@ -302,6 +302,23 @@ func TestGetMissingStockInExistingWalletReturnsZero(t *testing.T) {
 	assertNumberResponse(t, rec, 0)
 }
 
+func TestInvalidWalletPathsReturnNotFound(t *testing.T) {
+	tests := []string{
+		"/wallets/",
+		"/wallets/w1/stocks",
+		"/wallets/w1/invalid/stock1",
+	}
+
+	for _, target := range tests {
+		t.Run(target, func(t *testing.T) {
+			rec := doRequest(NewHandler(), http.MethodGet, target, "")
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+			}
+		})
+	}
+}
+
 func doRequest(handler http.Handler, method, target, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	rec := httptest.NewRecorder()
