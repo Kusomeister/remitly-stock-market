@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"remitly-stock-market/internal/market"
 )
@@ -30,6 +31,31 @@ func TestHealth(t *testing.T) {
 
 	if body.Status != "ok" {
 		t.Fatalf("expected status ok, got %q", body.Status)
+	}
+}
+
+func TestChaosKillsCurrentInstance(t *testing.T) {
+	killed := make(chan struct{}, 1)
+	handler := NewHandlerWithChaos(market.NewMemoryMarket(), func() {
+		killed <- struct{}{}
+	})
+
+	rec := doRequest(handler, http.MethodPost, "/chaos", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	select {
+	case <-killed:
+	case <-time.After(time.Second):
+		t.Fatal("expected chaos handler to kill current instance")
+	}
+}
+
+func TestChaosRejectsNonPostMethods(t *testing.T) {
+	rec := doRequest(newTestHandler(), http.MethodGet, "/chaos", "")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
 	}
 }
 

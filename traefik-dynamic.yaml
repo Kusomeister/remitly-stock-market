@@ -1,0 +1,19 @@
+http:
+  routers:
+    remitly-stock-market:
+      rule: PathPrefix(`/`)
+      entryPoints:
+        - web
+      service: remitly-stock-market
+
+  services:
+    remitly-stock-market:
+      loadBalancer:
+        passHostHeader: true
+        healthCheck:
+          path: /health
+          interval: 5s
+          timeout: 3s
+        servers:
+          - url: http://remitly-stock-market-app-1:8080
+          - url: http://remitly-stock-market-app-2:8080
