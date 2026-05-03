@@ -10,4 +10,5 @@ export GRAFANA_PORT
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 cd "$SCRIPT_DIR"
 
+docker compose --profile observability down --volumes --remove-orphans
 docker compose --profile observability up --build --scale app=2
