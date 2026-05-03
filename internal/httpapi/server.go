@@ -5,24 +5,27 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"remitly-stock-market/internal/market"
 )
 
 type Server struct {
-	bank market.BankStocks
+	store market.Market
 }
 
 func NewHandler() http.Handler {
-	return NewHandlerWithBank(market.NewMemoryBank())
+	return NewHandlerWithMarket(market.NewMemoryMarket())
 }
 
-func NewHandlerWithBank(bank market.BankStocks) http.Handler {
-	server := &Server{bank: bank}
+func NewHandlerWithMarket(store market.Market) http.Handler {
+	server := &Server{store: store}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", server.handleHealth)
 	mux.HandleFunc("/stocks", server.handleStocks)
+	mux.HandleFunc("/wallets/", server.handleWallets)
+	mux.HandleFunc("/log", server.handleLog)
 	return mux
 }
 
@@ -49,7 +52,7 @@ func (s *Server) handleStocks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetStocks(w http.ResponseWriter, r *http.Request) {
-	stocks, err := s.bank.ListStocks(r.Context())
+	stocks, err := s.store.ListStocks(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
@@ -76,7 +79,7 @@ func (s *Server) handlePostStocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.bank.SetStocks(r.Context(), *body.Stocks); err != nil {
+	if err := s.store.SetStocks(r.Context(), *body.Stocks); err != nil {
 		var validationError market.ValidationError
 		if errors.As(err, &validationError) {
 			writeError(w, http.StatusBadRequest, validationError.Message)
@@ -90,12 +93,134 @@ func (s *Server) handlePostStocks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{})
 }
 
+func (s *Server) handleWallets(w http.ResponseWriter, r *http.Request) {
+	walletID, stockName, ok := parseWalletPath(r.URL.Path)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	if stockName == "" {
+		if r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+
+		s.handleGetWallet(w, r, walletID)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		s.handleGetWalletStock(w, r, walletID, stockName)
+	case http.MethodPost:
+		s.handleTrade(w, r, walletID, stockName)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (s *Server) handleGetWallet(w http.ResponseWriter, r *http.Request, walletID string) {
+	wallet, err := s.store.GetWallet(r.Context(), walletID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, wallet)
+}
+
+func (s *Server) handleGetWalletStock(w http.ResponseWriter, r *http.Request, walletID, stockName string) {
+	quantity, err := s.store.GetWalletStock(r.Context(), walletID, stockName)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, quantity)
+}
+
+func (s *Server) handleTrade(w http.ResponseWriter, r *http.Request, walletID, stockName string) {
+	var body tradeRequest
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if body.Type != market.OperationBuy && body.Type != market.OperationSell {
+		writeError(w, http.StatusBadRequest, "invalid operation type")
+		return
+	}
+
+	if err := s.store.Trade(r.Context(), walletID, stockName, body.Type); err != nil {
+		switch {
+		case errors.Is(err, market.ErrStockNotFound):
+			writeError(w, http.StatusNotFound, "stock not found")
+		case errors.Is(err, market.ErrInsufficientBankStock):
+			writeError(w, http.StatusBadRequest, "insufficient bank stock")
+		case errors.Is(err, market.ErrInsufficientWalletStock):
+			writeError(w, http.StatusBadRequest, "insufficient wallet stock")
+		case errors.Is(err, market.ErrInvalidOperation):
+			writeError(w, http.StatusBadRequest, "invalid operation type")
+		default:
+			writeError(w, http.StatusInternalServerError, "internal server error")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{})
+}
+
+func (s *Server) handleLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+
+	logEntries, err := s.store.ListLog(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, logResponse{Log: logEntries})
+}
+
+func parseWalletPath(path string) (walletID, stockName string, ok bool) {
+	trimmed := strings.TrimPrefix(path, "/wallets/")
+	if trimmed == path || trimmed == "" {
+		return "", "", false
+	}
+
+	parts := strings.Split(trimmed, "/")
+	if len(parts) == 1 && parts[0] != "" {
+		return parts[0], "", true
+	}
+	if len(parts) == 3 && parts[0] != "" && parts[1] == "stocks" && parts[2] != "" {
+		return parts[0], parts[2], true
+	}
+
+	return "", "", false
+}
+
 type stocksRequest struct {
 	Stocks *[]market.Stock `json:"stocks"`
 }
 
+type tradeRequest struct {
+	Type market.OperationType `json:"type"`
+}
+
 type stocksResponse struct {
 	Stocks []market.Stock `json:"stocks"`
+}
+
+type logResponse struct {
+	Log []market.LogEntry `json:"log"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
