@@ -5,16 +5,29 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"remitly-stock-market/internal/market"
 )
 
 type Server struct {
-	store market.Market
+	store    market.Market
+	killSelf func()
 }
 
 func NewHandler(store market.Market) http.Handler {
-	server := &Server{store: store}
+	return NewHandlerWithChaos(store, func() {})
+}
+
+func NewHandlerWithChaos(store market.Market, killSelf func()) http.Handler {
+	if killSelf == nil {
+		killSelf = func() {}
+	}
+
+	server := &Server{
+		store:    store,
+		killSelf: killSelf,
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", server.handleHealth)
@@ -22,6 +35,7 @@ func NewHandler(store market.Market) http.Handler {
 	mux.HandleFunc("/wallets/{wallet_id}", server.handleWallet)
 	mux.HandleFunc("/wallets/{wallet_id}/stocks/{stock_name}", server.handleWalletStock)
 	mux.HandleFunc("/log", server.handleLog)
+	mux.HandleFunc("/chaos", server.handleChaos)
 	return mux
 }
 
@@ -34,6 +48,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+func (s *Server) handleChaos(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{})
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		s.killSelf()
+	}()
 }
 
 func (s *Server) handleStocks(w http.ResponseWriter, r *http.Request) {

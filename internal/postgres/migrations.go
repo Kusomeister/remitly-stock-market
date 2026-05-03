@@ -13,6 +13,18 @@ import (
 var migrationFiles embed.FS
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin migrations transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+	const migrationLockID int64 = 2026050301
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, migrationLockID); err != nil {
+		return fmt.Errorf("lock migrations: %w", err)
+	}
+
 	entries, err := migrationFiles.ReadDir("migrations")
 	if err != nil {
 		return fmt.Errorf("read migrations: %w", err)
@@ -33,9 +45,13 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			return fmt.Errorf("read migration %s: %w", path, err)
 		}
 
-		if _, err := pool.Exec(ctx, string(sql)); err != nil {
+		if _, err := tx.Exec(ctx, string(sql)); err != nil {
 			return fmt.Errorf("run migration %s: %w", path, err)
 		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit migrations transaction: %w", err)
 	}
 
 	return nil

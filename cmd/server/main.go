@@ -41,7 +41,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           httpapi.NewHandler(store),
+		Handler:           httpapi.NewHandlerWithChaos(store, func() { os.Exit(1) }),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
