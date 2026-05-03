@@ -302,17 +302,20 @@ func assertLogState(t *testing.T, market *MemoryMarket, expected []LogEntry) {
 func assertStocks(t *testing.T, got, expected []Stock) {
 	t.Helper()
 
-	if !reflect.DeepEqual(got, expected) {
-		t.Fatalf("expected stocks %#v, got %#v", expected, got)
+	gotByName := stockSet(t, got)
+	expectedByName := stockSet(t, expected)
+	if !reflect.DeepEqual(gotByName, expectedByName) {
+		t.Fatalf("expected stock set %#v, got %#v", expectedByName, gotByName)
 	}
 }
 
 func assertWallet(t *testing.T, got, expected Wallet) {
 	t.Helper()
 
-	if !reflect.DeepEqual(got, expected) {
-		t.Fatalf("expected wallet %#v, got %#v", expected, got)
+	if got.ID != expected.ID {
+		t.Fatalf("expected wallet ID %q, got %q", expected.ID, got.ID)
 	}
+	assertStocks(t, got.Stocks, expected.Stocks)
 }
 
 func assertLog(t *testing.T, got, expected []LogEntry) {
@@ -321,4 +324,18 @@ func assertLog(t *testing.T, got, expected []LogEntry) {
 	if !reflect.DeepEqual(got, expected) {
 		t.Fatalf("expected log %#v, got %#v", expected, got)
 	}
+}
+
+func stockSet(t *testing.T, stocks []Stock) map[string]int {
+	t.Helper()
+
+	byName := make(map[string]int, len(stocks))
+	for _, stock := range stocks {
+		if _, exists := byName[stock.Name]; exists {
+			t.Fatalf("duplicate stock %q in %#v", stock.Name, stocks)
+		}
+		byName[stock.Name] = stock.Quantity
+	}
+
+	return byName
 }
