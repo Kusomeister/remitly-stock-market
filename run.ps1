@@ -10,6 +10,7 @@ try {
     $env:PORT = [string]$Port
     $env:GRAFANA_PORT = [string]$GrafanaPort
 
+    docker compose --profile observability down --volumes --remove-orphans
     docker compose --profile observability up --build --scale app=2
 }
 finally {
