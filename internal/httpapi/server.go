@@ -20,6 +20,23 @@ func NewHandler(store market.Market) http.Handler {
 }
 
 func NewHandlerWithChaos(store market.Market, killSelf func()) http.Handler {
+	return newHandlerWithChaos(store, killSelf)
+}
+
+func NewObservedHandler(store market.Market, observability *Observability) http.Handler {
+	return NewObservedHandlerWithChaos(store, func() {}, observability)
+}
+
+func NewObservedHandlerWithChaos(store market.Market, killSelf func(), observability *Observability) http.Handler {
+	handler := newHandlerWithChaos(store, killSelf)
+	if observability == nil {
+		return handler
+	}
+
+	return observability.Middleware(handler)
+}
+
+func newHandlerWithChaos(store market.Market, killSelf func()) http.Handler {
 	if killSelf == nil {
 		killSelf = func() {}
 	}
