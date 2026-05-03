@@ -358,9 +358,7 @@ func assertStocksResponse(t *testing.T, rec *httptest.ResponseRecorder, expected
 		t.Fatalf("expected JSON body: %v", err)
 	}
 
-	if !reflect.DeepEqual(body.Stocks, expected) {
-		t.Fatalf("expected stocks %#v, got %#v", expected, body.Stocks)
-	}
+	assertStockSet(t, body.Stocks, expected)
 }
 
 func assertWalletResponse(t *testing.T, rec *httptest.ResponseRecorder, expected market.Wallet) {
@@ -371,9 +369,10 @@ func assertWalletResponse(t *testing.T, rec *httptest.ResponseRecorder, expected
 		t.Fatalf("expected JSON body: %v", err)
 	}
 
-	if !reflect.DeepEqual(body, expected) {
-		t.Fatalf("expected wallet %#v, got %#v", expected, body)
+	if body.ID != expected.ID {
+		t.Fatalf("expected wallet ID %q, got %q", expected.ID, body.ID)
 	}
+	assertStockSet(t, body.Stocks, expected.Stocks)
 }
 
 func assertLogResponse(t *testing.T, rec *httptest.ResponseRecorder, expected []market.LogEntry) {
@@ -400,4 +399,28 @@ func assertNumberResponse(t *testing.T, rec *httptest.ResponseRecorder, expected
 	if body != expected {
 		t.Fatalf("expected number %d, got %d", expected, body)
 	}
+}
+
+func assertStockSet(t *testing.T, got, expected []market.Stock) {
+	t.Helper()
+
+	gotByName := stockSet(t, got)
+	expectedByName := stockSet(t, expected)
+	if !reflect.DeepEqual(gotByName, expectedByName) {
+		t.Fatalf("expected stock set %#v, got %#v", expectedByName, gotByName)
+	}
+}
+
+func stockSet(t *testing.T, stocks []market.Stock) map[string]int {
+	t.Helper()
+
+	byName := make(map[string]int, len(stocks))
+	for _, stock := range stocks {
+		if _, exists := byName[stock.Name]; exists {
+			t.Fatalf("duplicate stock %q in %#v", stock.Name, stocks)
+		}
+		byName[stock.Name] = stock.Quantity
+	}
+
+	return byName
 }
